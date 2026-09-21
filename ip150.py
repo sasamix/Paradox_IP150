@@ -182,7 +182,7 @@ class Paradox_IP150:
         logging.info("Logged out from the Paradox web interface.")
 
     def _js2array(self, varname, script):
-        res = re.search('{} = new Array\((.*?)\);'.format(varname), script)
+        res = re.search(r'{} = new Array\((.*?)\);'.format(varname), script)
         res = '[{}]'.format(res.group(1))
         return json.loads(res)
 
