@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+- Update requests, Beautiful Soup, and Paho MQTT for current Python 3.14 environments.
+- Migrate MQTT callbacks to Paho MQTT 2.x Callback API v2.
+- Remove obsolete transitive dependency pins so pip can resolve compatible urllib3/certifi/idna versions.
+
 ## 1.4.0
 
 - Keep MQTT alive while the IP150 is unavailable at startup.
