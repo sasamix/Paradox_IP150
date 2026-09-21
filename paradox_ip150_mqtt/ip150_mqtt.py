@@ -89,34 +89,43 @@ class IP150_MQTT:
             'model': 'IP150 MQTT Adapter'
         }
         entities = {
-            'connection': {
-                'name': 'IP150 Connection',
-                'state_topic': root + '/state',
-                'icon': 'mdi:lan-connect'
-            },
             'last_seen': {
-                'name': 'IP150 Last Seen',
+                'name': 'Последний ответ IP150',
                 'state_topic': root + '/last_seen',
                 'device_class': 'timestamp',
+                'entity_category': 'diagnostic',
                 'icon': 'mdi:clock-check-outline'
             },
             'last_error': {
-                'name': 'IP150 Last Error',
+                'name': 'Последняя ошибка IP150',
                 'state_topic': root + '/last_error',
+                'entity_category': 'diagnostic',
                 'icon': 'mdi:alert-circle-outline'
             },
             'reconnects': {
-                'name': 'IP150 Reconnects',
+                'name': 'Переподключения IP150',
                 'state_topic': root + '/reconnects',
                 'state_class': 'total_increasing',
+                'entity_category': 'diagnostic',
                 'icon': 'mdi:connection'
             },
             'last_outage_seconds': {
-                'name': 'IP150 Last Outage',
+                'name': 'Последний обрыв IP150',
                 'state_topic': root + '/last_outage_seconds',
                 'unit_of_measurement': 's',
                 'device_class': 'duration',
+                'entity_category': 'diagnostic',
                 'icon': 'mdi:timer-alert-outline'
+            }
+        }
+        binary_entities = {
+            'connection': {
+                'name': 'Связь с IP150',
+                'state_topic': root + '/state',
+                'payload_on': 'connected',
+                'payload_off': 'reconnecting',
+                'device_class': 'connectivity',
+                'entity_category': 'diagnostic'
             }
         }
         for object_id, config in entities.items():
@@ -126,6 +135,17 @@ class IP150_MQTT:
             client.publish(
                 'homeassistant/sensor/paradox_ip150/' + object_id + '/config',
                 json.dumps(payload), 1, True)
+        for object_id, config in binary_entities.items():
+            payload = dict(config)
+            payload['unique_id'] = 'paradox_ip150_' + object_id
+            payload['device'] = device
+            client.publish(
+                'homeassistant/binary_sensor/paradox_ip150/' + object_id + '/config',
+                json.dumps(payload), 1, True)
+        # Remove the old sensor discovery config for Connection from 1.5.6.
+        client.publish(
+            'homeassistant/sensor/paradox_ip150/connection/config',
+            '', 1, True)
         self._discovery_published = True
 
     def on_paradox_poll_success(self, client):
