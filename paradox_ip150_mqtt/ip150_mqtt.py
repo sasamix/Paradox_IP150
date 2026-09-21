@@ -60,20 +60,76 @@ class IP150_MQTT:
         self._diag_prefix = (ctrl_topic[0] if ctrl_topic else 'paradox') + '/diagnostic'
         self._reconnect_count = 0
         self._disconnect_started = None
+        self._diag_state_value = None
+        self._discovery_published = False
 
     def _diag_publish(self, client, name, value):
         client.publish(self._diag_prefix + '/' + name, str(value), 1, True)
 
     def _diag_state(self, client, state, error=None):
-        self._diag_publish(client, 'state', state)
+        if state != self._diag_state_value:
+            self._diag_publish(client, 'state', state)
+            self._diag_state_value = state
         if error is not None:
             self._diag_publish(client, 'last_error', error)
+
+    def _diag_heartbeat(self, client):
         self._diag_publish(
             client, 'last_seen',
             datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds'))
 
+    def _publish_discovery(self, client):
+        if self._discovery_published:
+            return
+        root = self._diag_prefix
+        device = {
+            'identifiers': ['paradox_ip150_mqtt'],
+            'name': 'Paradox IP150 MQTT Adapter',
+            'manufacturer': 'Paradox',
+            'model': 'IP150 MQTT Adapter'
+        }
+        entities = {
+            'connection': {
+                'name': 'IP150 Connection',
+                'state_topic': root + '/state',
+                'icon': 'mdi:lan-connect'
+            },
+            'last_seen': {
+                'name': 'IP150 Last Seen',
+                'state_topic': root + '/last_seen',
+                'device_class': 'timestamp',
+                'icon': 'mdi:clock-check-outline'
+            },
+            'last_error': {
+                'name': 'IP150 Last Error',
+                'state_topic': root + '/last_error',
+                'icon': 'mdi:alert-circle-outline'
+            },
+            'reconnects': {
+                'name': 'IP150 Reconnects',
+                'state_topic': root + '/reconnects',
+                'state_class': 'total_increasing',
+                'icon': 'mdi:connection'
+            },
+            'last_outage_seconds': {
+                'name': 'IP150 Last Outage',
+                'state_topic': root + '/last_outage_seconds',
+                'unit_of_measurement': 's',
+                'device_class': 'duration',
+                'icon': 'mdi:timer-alert-outline'
+            }
+        }
+        for object_id, config in entities.items():
+            payload = dict(config)
+            payload['unique_id'] = 'paradox_ip150_' + object_id
+            payload['device'] = device
+            client.publish(
+                'homeassistant/sensor/paradox_ip150/' + object_id + '/config',
+                json.dumps(payload), 1, True)
+        self._discovery_published = True
+
     def on_paradox_poll_success(self, client):
-        self._diag_state(client, 'connected')
+        self._diag_heartbeat(client)
 
     def on_paradox_new_state(self, state, client):
         for group, values in state.items():
@@ -160,7 +216,9 @@ class IP150_MQTT:
             (self._cfg['ALARM_SUBSCRIBE_TOPIC'] + '/+', 1),
             (self._cfg['CTRL_SUBSCRIBE_TOPIC'], 1)
         ])
+        self._publish_discovery(client)
         if self._ip_connected:
+            self._diag_state(client, 'connected')
             client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
         else:
             self._diag_state(client, 'reconnecting', 'IP150 is not connected')
