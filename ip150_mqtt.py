@@ -273,6 +273,13 @@ class IP150_MQTT:
                         self._diag_publish(client, 'last_outage_seconds', '{:.1f}'.format(outage))
                         self._disconnect_started = None
                     self._diag_state(client, 'connected')
+                    if first_connection:
+                        # Diagnostics are per app run. Clear retained values
+                        # left by the previous container before publishing
+                        # fresh counters for this run.
+                        self._diag_publish(client, 'last_error', '')
+                        self._diag_publish(client, 'last_outage_seconds', '')
+                        self._diag_publish(client, 'reconnects', 0)
                     client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
                     if first_connection:
                         logging.info('Paradox IP150 initial connection established.')
