@@ -282,26 +282,36 @@ class Paradox_IP150:
     def _get_updates(self, on_update, on_error, on_success, userdata, interval):
         try:
             previous = {}
+            consecutive_errors = 0
             while not self._stop_updates.wait(interval):
-                current = self.get_info(interval)
-                if on_success:
-                    on_success(userdata)
-                updated = {}
-                for group, values in current.items():
-                    if group not in previous:
-                        updated[group] = values
+                try:
+                    current = self.get_info(interval)
+                    consecutive_errors = 0
+                    if on_success:
+                        on_success(userdata)
+                    updated = {}
+                    for group, values in current.items():
+                        if group not in previous:
+                            updated[group] = values
+                            continue
+                        for cur, prev in zip(values, previous[group]):
+                            if cur != prev:
+                                updated.setdefault(group, []).append(cur)
+                        if len(values) > len(previous[group]):
+                            updated.setdefault(group, []).extend(values[len(previous[group]):])
+                    if updated:
+                        on_update(updated, userdata)
+                    previous = current
+                except Exception as error:
+                    consecutive_errors += 1
+                    if consecutive_errors < 3:
+                        logging.warning(
+                            'IP150 status poll failed (%s/3); keeping connection state: %s',
+                            consecutive_errors, error)
                         continue
-                    for cur, prev in zip(values, previous[group]):
-                        if cur != prev:
-                            updated.setdefault(group, []).append(cur)
-                    if len(values) > len(previous[group]):
-                        updated.setdefault(group, []).extend(values[len(previous[group]):])
-                if updated:
-                    on_update(updated, userdata)
-                previous = current
-        except Exception as error:
-            if on_error and not self._stop_updates.is_set():
-                on_error(error, userdata)
+                    if on_error and not self._stop_updates.is_set():
+                        on_error(error, userdata)
+                    return
         finally:
             self._updates = None
             self._stop_updates.clear()
