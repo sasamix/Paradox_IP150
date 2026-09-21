@@ -143,12 +143,35 @@ class Paradox_IP150:
                 'Could not retrieve IP150 login page: {}'.format(error)) from error
         self._check_response(login_page, 'Login page')
 
-        match = re.search(r'loginaff.{0,20}?([A-Za-z0-9]{16})', login_page.text, re.DOTALL)
+        match = None
+        # IP150 can briefly return an incomplete/stale login page while its
+        # web server is recovering. Retry the page before treating this as a
+        # persistent session/login problem.
+        for attempt in range(1, 4):
+            match = re.search(
+                r'loginaff.{0,20}?([A-Za-z0-9]{16})',
+                login_page.text,
+                re.DOTALL)
+            if match:
+                break
+            if attempt < 3:
+                time.sleep(1)
+                try:
+                    login_page = requests.get(
+                        self.ip150url + '/login_page.html',
+                        verify=False,
+                        timeout=(5, 10))
+                    self._check_response(login_page, 'Login page')
+                except requests.RequestException as error:
+                    logging.warning(
+                        'IP150 login page retry %s failed: %s',
+                        attempt, error)
+
         if not match:
             # Do not dump the complete IP150 HTML into logs: it is noisy and
             # can contain user/site-specific data.
             raise Paradox_IP150_Error(
-                'Unexpected IP150 login page; another web session may be active or the firmware is unsupported.')
+                'Unexpected IP150 login page after 3 attempts; another web session may be active or the firmware is unsupported.')
         sess = match.group(1)
 
         creds = self._prep_cred(user, pwd, sess)
@@ -173,19 +196,22 @@ class Paradox_IP150:
             self._keepalive.start()
         logging.info('Successfully logged into the Paradox web interface.')
 
-    @_logged_only
-    def logout(self):
+    def logout(self, force_remote=False):
+        # Always clean up local workers, even when the IP150 session has
+        # already expired and logged_in was cleared by get_info().
+        was_logged_in = self.logged_in
         self.cancel_updates(silent=True)
         if self._keepalive:
             self._keepalive.cancel()
             self._keepalive.join(timeout=10)
             self._keepalive = None
         try:
-            response = requests.get(
-                self.ip150url + '/logout.html',
-                verify=False,
-                timeout=(5, 10))
-            self._check_response(response, 'Logout')
+            if was_logged_in or force_remote:
+                response = requests.get(
+                    self.ip150url + '/logout.html',
+                    verify=False,
+                    timeout=(5, 10))
+                self._check_response(response, 'Logout')
         finally:
             self.logged_in = False
         logging.info('Logged out from the Paradox web interface.')
@@ -256,33 +282,45 @@ class Paradox_IP150:
             result[table] = mapped
         return result
 
-    def _get_updates(self, on_update, on_error, userdata, interval):
+    def _get_updates(self, on_update, on_error, on_success, userdata, interval):
         try:
             previous = {}
+            consecutive_errors = 0
             while not self._stop_updates.wait(interval):
-                current = self.get_info(interval)
-                updated = {}
-                for group, values in current.items():
-                    if group not in previous:
-                        updated[group] = values
+                try:
+                    current = self.get_info(interval)
+                    consecutive_errors = 0
+                    if on_success:
+                        on_success(userdata)
+                    updated = {}
+                    for group, values in current.items():
+                        if group not in previous:
+                            updated[group] = values
+                            continue
+                        for cur, prev in zip(values, previous[group]):
+                            if cur != prev:
+                                updated.setdefault(group, []).append(cur)
+                        if len(values) > len(previous[group]):
+                            updated.setdefault(group, []).extend(values[len(previous[group]):])
+                    if updated:
+                        on_update(updated, userdata)
+                    previous = current
+                except Exception as error:
+                    consecutive_errors += 1
+                    if consecutive_errors < 3:
+                        logging.warning(
+                            'IP150 status poll failed (%s/3); keeping connection state: %s',
+                            consecutive_errors, error)
                         continue
-                    for cur, prev in zip(values, previous[group]):
-                        if cur != prev:
-                            updated.setdefault(group, []).append(cur)
-                    if len(values) > len(previous[group]):
-                        updated.setdefault(group, []).extend(values[len(previous[group]):])
-                if updated:
-                    on_update(updated, userdata)
-                previous = current
-        except Exception as error:
-            if on_error and not self._stop_updates.is_set():
-                on_error(error, userdata)
+                    if on_error and not self._stop_updates.is_set():
+                        on_error(error, userdata)
+                    return
         finally:
             self._updates = None
             self._stop_updates.clear()
 
     @_logged_only
-    def get_updates(self, on_update=None, on_error=None, userdata=None, poll_interval=1.0):
+    def get_updates(self, on_update=None, on_error=None, on_success=None, userdata=None, poll_interval=1.0):
         if not on_update:
             raise Paradox_IP150_Error('The callable on_update must be provided.')
         if poll_interval <= 0:
@@ -292,12 +330,11 @@ class Paradox_IP150:
         self._stop_updates.clear()
         self._updates = threading.Thread(
             target=self._get_updates,
-            args=(on_update, on_error, userdata, poll_interval),
+            args=(on_update, on_error, on_success, userdata, poll_interval),
             daemon=True,
             name='ip150-updates')
         self._updates.start()
 
-    @_logged_only
     def cancel_updates(self, silent=False):
         if self._updates and self._updates.is_alive():
             thread = self._updates
