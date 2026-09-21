@@ -105,7 +105,7 @@ class IP150_MQTT:
                 except Exception as error:
                     self._ip_connected = False
                     logging.warning(
-                        'Paradox IP150 reconnect failed: %s. Retrying in %s seconds.',
+                        'Paradox IP150 reconnect failed: %s Retrying in %s seconds.',
                         error, delay)
                     if self._wait_or_stop(delay):
                         return
