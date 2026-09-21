@@ -56,7 +56,8 @@ class IP150_MQTT:
         self._ip_connected = False
         self.ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
         self._mqtt_client = None
-        self._diag_prefix = self._cfg['CTRL_PUBLISH_TOPIC'].rsplit('/', 1)[0] + '/diagnostic'
+        ctrl_topic = self._cfg['CTRL_PUBLISH_TOPIC'].strip('/').split('/')
+        self._diag_prefix = (ctrl_topic[0] if ctrl_topic else 'paradox') + '/diagnostic'
         self._reconnect_count = 0
         self._disconnect_started = None
 
@@ -71,8 +72,10 @@ class IP150_MQTT:
             client, 'last_seen',
             datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds'))
 
-    def on_paradox_new_state(self, state, client):
+    def on_paradox_poll_success(self, client):
         self._diag_state(client, 'connected')
+
+    def on_paradox_new_state(self, state, client):
         for group, values in state.items():
             mapping = self._status_map.get(group)
             if not mapping:
@@ -114,6 +117,7 @@ class IP150_MQTT:
                     new_ip.get_updates(
                         on_update=self.on_paradox_new_state,
                         on_error=self.on_paradox_update_error,
+                        on_success=self.on_paradox_poll_success,
                         userdata=client,
                         poll_interval=self._cfg['REFRESH_RATE'])
                     self.ip = new_ip
