@@ -246,7 +246,7 @@ class IP150_MQTT:
             self._diag_state(client, 'connected')
             client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
         else:
-            self._diag_state(client, 'reconnecting', 'IP150 is not connected')
+            self._diag_state(client, 'reconnecting')
             client.publish(*self._will)
             self._start_ip150_reconnect(client)
 
