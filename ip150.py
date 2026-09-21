@@ -196,7 +196,7 @@ class Paradox_IP150:
             self._keepalive.start()
         logging.info('Successfully logged into the Paradox web interface.')
 
-    def logout(self):
+    def logout(self, force_remote=False):
         # Always clean up local workers, even when the IP150 session has
         # already expired and logged_in was cleared by get_info().
         was_logged_in = self.logged_in
@@ -206,7 +206,7 @@ class Paradox_IP150:
             self._keepalive.join(timeout=10)
             self._keepalive = None
         try:
-            if was_logged_in:
+            if was_logged_in or force_remote:
                 response = requests.get(
                     self.ip150url + '/logout.html',
                     verify=False,
