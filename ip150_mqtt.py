@@ -120,7 +120,6 @@ class IP150_MQTT:
         }
         binary_entities = {
             'connection': {
-                'name': 'Connection',
                 'state_topic': root + '/state',
                 'payload_on': 'connected',
                 'payload_off': 'reconnecting',
