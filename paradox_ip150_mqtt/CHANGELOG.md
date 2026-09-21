@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.2
+
+- Forward SIGTERM/SIGINT from the Home Assistant app container to the Python process.
+- Stop MQTT polling and log out from IP150 during normal shutdown.
+- Do not restart the adapter after an intentional clean exit.
+- Keep the 20-second restart delay only for unexpected process failures.
+- Make the restart delay interruptible so app stop/restart is responsive.
+
 ## 1.5.1
 
 - Validate HTTP status codes and convert transport failures to concise IP150 errors.
