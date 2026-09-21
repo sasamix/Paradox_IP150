@@ -62,7 +62,6 @@ class IP150_MQTT:
         self._disconnect_started = None
         self._diag_state_value = None
         self._discovery_published = False
-        self._last_heartbeat_publish = 0.0
 
     def _diag_publish(self, client, name, value):
         client.publish(self._diag_prefix + '/' + name, str(value), 1, True)
@@ -152,9 +151,6 @@ class IP150_MQTT:
             '', 1, True)
         self._discovery_published = True
 
-    def on_paradox_poll_success(self, client):
-        self._diag_heartbeat(client)
-
     def on_paradox_new_state(self, state, client):
         for group, values in state.items():
             mapping = self._status_map.get(group)
@@ -197,7 +193,6 @@ class IP150_MQTT:
                     new_ip.get_updates(
                         on_update=self.on_paradox_new_state,
                         on_error=self.on_paradox_update_error,
-                        on_success=self.on_paradox_poll_success,
                         userdata=client,
                         poll_interval=self._cfg['REFRESH_RATE'])
                     self.ip = new_ip
@@ -209,7 +204,9 @@ class IP150_MQTT:
                         self._diag_publish(client, 'last_outage_seconds', '{:.1f}'.format(outage))
                         self._disconnect_started = None
                     self._diag_state(client, 'connected')
-                    self._diag_heartbeat(client, force=True)
+                    self._diag_publish(
+                        client, 'last_seen',
+                        datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds'))
                     client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
                     logging.warning('Paradox IP150 connection restored.')
                     return
