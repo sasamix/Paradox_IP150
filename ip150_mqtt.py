@@ -84,13 +84,6 @@ class IP150_MQTT:
             'model': 'IP150 MQTT Adapter'
         }
         entities = {
-            'last_seen': {
-                'name': 'Last seen',
-                'state_topic': root + '/last_seen',
-                'device_class': 'timestamp',
-                'entity_category': 'diagnostic',
-                'icon': 'mdi:clock-check-outline'
-            },
             'last_error': {
                 'name': 'Last error',
                 'state_topic': root + '/last_error',
@@ -136,6 +129,11 @@ class IP150_MQTT:
             client.publish(
                 'homeassistant/binary_sensor/paradox_ip150/' + object_id + '/config',
                 json.dumps(payload), 1, True)
+        # Remove obsolete Last seen diagnostic entity and retained state.
+        client.publish(
+            'homeassistant/sensor/paradox_ip150/last_seen/config',
+            '', 1, True)
+        client.publish(root + '/last_seen', '', 1, True)
         # Remove the old sensor discovery config for Connection from 1.5.6.
         client.publish(
             'homeassistant/sensor/paradox_ip150/connection/config',
@@ -195,9 +193,6 @@ class IP150_MQTT:
                         self._diag_publish(client, 'last_outage_seconds', '{:.1f}'.format(outage))
                         self._disconnect_started = None
                     self._diag_state(client, 'connected')
-                    self._diag_publish(
-                        client, 'last_seen',
-                        datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds'))
                     client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
                     logging.warning('Paradox IP150 connection restored.')
                     return
