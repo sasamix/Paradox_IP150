@@ -90,27 +90,27 @@ class IP150_MQTT:
         }
         entities = {
             'last_seen': {
-                'name': 'Последний ответ IP150',
+                'name': 'Last seen',
                 'state_topic': root + '/last_seen',
                 'device_class': 'timestamp',
                 'entity_category': 'diagnostic',
                 'icon': 'mdi:clock-check-outline'
             },
             'last_error': {
-                'name': 'Последняя ошибка IP150',
+                'name': 'Last error',
                 'state_topic': root + '/last_error',
                 'entity_category': 'diagnostic',
                 'icon': 'mdi:alert-circle-outline'
             },
             'reconnects': {
-                'name': 'Переподключения IP150',
+                'name': 'Reconnects',
                 'state_topic': root + '/reconnects',
                 'state_class': 'total_increasing',
                 'entity_category': 'diagnostic',
                 'icon': 'mdi:connection'
             },
             'last_outage_seconds': {
-                'name': 'Последний обрыв IP150',
+                'name': 'Last outage',
                 'state_topic': root + '/last_outage_seconds',
                 'unit_of_measurement': 's',
                 'device_class': 'duration',
@@ -120,7 +120,7 @@ class IP150_MQTT:
         }
         binary_entities = {
             'connection': {
-                'name': 'Связь с IP150',
+                'name': 'Connection',
                 'state_topic': root + '/state',
                 'payload_on': 'connected',
                 'payload_off': 'reconnecting',
