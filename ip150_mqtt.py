@@ -110,7 +110,7 @@ class IP150_MQTT():
 										userdata=client,
 										poll_interval=self._cfg['REFRESH_RATE'])
 					client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
-					logging.info('Successfully reconnected to Paradox IP150.')
+					logging.warning('Paradox IP150 connection restored.')
 					return
 				except Exception as e:
 					logging.warning('Paradox IP150 reconnect failed: {}. Retrying in {} seconds.'.format(e, delay))
