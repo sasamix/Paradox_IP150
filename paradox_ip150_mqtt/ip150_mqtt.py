@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import signal
 import threading
 import time
 import urllib.parse
@@ -53,6 +54,7 @@ class IP150_MQTT:
         self._stopping = False
         self._ip_connected = False
         self.ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
+        self._mqtt_client = None
 
     def on_paradox_new_state(self, state, client):
         for group, values in state.items():
@@ -190,9 +192,33 @@ class IP150_MQTT:
             raise IP150_MQTT_Error('MQTT_ADDRESS does not contain a hostname.')
         return parsed, parsed.port or (1883 if parsed.scheme == 'mqtt' else 8883)
 
+    def _handle_signal(self, signum, frame):
+        logging.info('Received signal %s; shutting down.', signum)
+        self._stopping = True
+        client = self._mqtt_client
+        if client is None:
+            return
+        try:
+            self.ip.cancel_updates()
+        except Exception:
+            pass
+        try:
+            if self.ip.logged_in:
+                self.ip.logout()
+        except Exception as error:
+            logging.debug('IP150 logout failed during signal shutdown: %s', error)
+        try:
+            client.publish(*self._will)
+        except Exception:
+            pass
+        client.disconnect()
+
     def loop_forever(self):
         parsed, mqtt_port = self.parse_mqtt_url()
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self._mqtt_client = client
+        signal.signal(signal.SIGTERM, self._handle_signal)
+        signal.signal(signal.SIGINT, self._handle_signal)
         client.on_connect = self.on_mqtt_connect
         client.on_disconnect = self.on_mqtt_disconnect
         client.message_callback_add(self._cfg['ALARM_SUBSCRIBE_TOPIC'] + '/+', self.on_mqtt_alarm_message)
