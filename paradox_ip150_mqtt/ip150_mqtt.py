@@ -89,7 +89,7 @@ class IP150_MQTT:
         root = self._diag_prefix
         device = {
             'identifiers': ['paradox_ip150_mqtt'],
-            'name': 'Paradox IP150 MQTT Adapter',
+            'name': 'Paradox IP150',
             'manufacturer': 'Paradox',
             'model': 'IP150 MQTT Adapter'
         }
