@@ -1,5 +1,5 @@
 name: "Paradox IP150 MQTT Adapter"
-version: "1.5.0"
+version: "1.6.0"
 slug: "paradox_ip150_mqtt"
 description: "Expose an MQTT interface for Paradox IP150 with automatic HTTP reconnect"
 arch:
