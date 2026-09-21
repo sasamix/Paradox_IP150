@@ -353,6 +353,7 @@ class IP150_MQTT:
             self.ip.cancel_updates()
         except Exception:
             pass
+        self._diag_state(client, 'reconnecting')
         client.publish(*self._will)
         try:
             self.ip.logout()
@@ -392,6 +393,7 @@ class IP150_MQTT:
         except Exception as error:
             logging.debug('IP150 logout failed during signal shutdown: %s', error)
         try:
+            self._diag_state(client, 'reconnecting')
             client.publish(*self._will)
         except Exception:
             pass
