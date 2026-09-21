@@ -337,8 +337,10 @@ class IP150_MQTT:
             self._diag_state(client, 'connected')
             client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
         else:
-            # Startup is not an outage: keep retained diagnostics untouched
-            # until the first IP150 session has actually been established.
+            # A new process has not verified the IP150 session yet. Publish
+            # OFF explicitly so HA also records a full HA reboot where the
+            # previous process could not update MQTT during shutdown.
+            self._diag_state(client, 'reconnecting')
             self._start_ip150_reconnect(client)
 
     def on_mqtt_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
