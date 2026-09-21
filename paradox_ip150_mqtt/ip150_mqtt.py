@@ -54,6 +54,7 @@ class IP150_MQTT:
         self._reconnect_lock = threading.Lock()
         self._stopping = False
         self._ip_connected = False
+        self._ever_ip_connected = False
         self.ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
         self._mqtt_client = None
         ctrl_topic = self._cfg['CTRL_PUBLISH_TOPIC'].strip('/').split('/')
@@ -183,6 +184,7 @@ class IP150_MQTT:
                     poll_interval=self._cfg['REFRESH_RATE'])
                 self.ip = new_ip
                 self._ip_connected = True
+                self._ever_ip_connected = True
                 logging.warning('Paradox IP150 session recovered without connection outage.')
                 return
             except Exception as recovery_error:
@@ -224,21 +226,29 @@ class IP150_MQTT:
                         poll_interval=self._cfg['REFRESH_RATE'])
                     self.ip = new_ip
                     self._ip_connected = True
-                    self._reconnect_count += 1
-                    self._diag_publish(client, 'reconnects', self._reconnect_count)
-                    if self._disconnect_started is not None:
+                    first_connection = not self._ever_ip_connected
+                    self._ever_ip_connected = True
+                    if not first_connection:
+                        self._reconnect_count += 1
+                    if not first_connection:
+                        self._diag_publish(client, 'reconnects', self._reconnect_count)
+                    if not first_connection and self._disconnect_started is not None:
                         outage = time.monotonic() - self._disconnect_started
                         self._diag_publish(client, 'last_outage_seconds', '{:.1f}'.format(outage))
                         self._disconnect_started = None
                     self._diag_state(client, 'connected')
                     client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
-                    logging.warning('Paradox IP150 connection restored.')
+                    if first_connection:
+                        logging.info('Paradox IP150 initial connection established.')
+                    else:
+                        logging.warning('Paradox IP150 connection restored.')
                     return
                 except Exception as error:
                     self._ip_connected = False
-                    if self._disconnect_started is None:
-                        self._disconnect_started = time.monotonic()
-                    self._diag_state(client, 'reconnecting', error)
+                    if self._ever_ip_connected:
+                        if self._disconnect_started is None:
+                            self._disconnect_started = time.monotonic()
+                        self._diag_state(client, 'reconnecting', error)
                     logging.warning(
                         'Paradox IP150 reconnect failed: %s Retrying in %s seconds.',
                         error, delay)
@@ -267,8 +277,8 @@ class IP150_MQTT:
             self._diag_state(client, 'connected')
             client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
         else:
-            self._diag_state(client, 'reconnecting', 'IP150 is not connected')
-            client.publish(*self._will)
+            # Initial IP150 connection is still pending. Do not report a
+            # disconnect/error until a working IP150 session has existed.
             self._start_ip150_reconnect(client)
 
     def on_mqtt_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
