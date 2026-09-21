@@ -228,7 +228,7 @@ class Paradox_IP150:
         status_page = self._retry_get(
             self.ip150url + '/statuslive.html',
             verify=False,
-            timeout=(max(0.5, timeout / 2), max(1.0, timeout)))
+            timeout=(3.0, max(5.0, timeout * 2)))
 
         if self._looks_like_login_page(status_page.text):
             self.logged_in = False
