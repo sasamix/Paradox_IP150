@@ -179,6 +179,7 @@ class IP150_MQTT:
             for attempt, delay_after_failure in enumerate((1, 2, 4, 0), start=1):
                 if self._stopping:
                     return
+                new_ip = None
                 try:
                     try:
                         self.ip.logout(force_remote=True)
@@ -207,6 +208,13 @@ class IP150_MQTT:
                         attempt)
                     return
                 except Exception as recovery_error:
+                    if new_ip is not None and new_ip is not self.ip:
+                        try:
+                            new_ip.logout()
+                        except Exception as cleanup_error:
+                            logging.debug(
+                                'Failed to clean up recovery candidate: %s',
+                                cleanup_error)
                     last_error = recovery_error
                     logging.warning(
                         'Silent IP150 session recovery attempt %s/4 failed: %s',
@@ -246,6 +254,7 @@ class IP150_MQTT:
         try:
             delay = 5
             while not self._stopping:
+                new_ip = None
                 try:
                     try:
                         self.ip.logout(force_remote=True)
@@ -278,7 +287,7 @@ class IP150_MQTT:
                         # left by the previous container before publishing
                         # fresh counters for this run.
                         self._diag_publish(client, 'last_error', '')
-                        self._diag_publish(client, 'last_outage_seconds', '')
+                        self._diag_publish(client, 'last_outage_seconds', 'None')
                         self._diag_publish(client, 'reconnects', 0)
                     client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
                     if first_connection:
@@ -287,6 +296,13 @@ class IP150_MQTT:
                         logging.warning('Paradox IP150 connection restored.')
                     return
                 except Exception as error:
+                    if new_ip is not None and new_ip is not self.ip:
+                        try:
+                            new_ip.logout()
+                        except Exception as cleanup_error:
+                            logging.debug(
+                                'Failed to clean up reconnect candidate: %s',
+                                cleanup_error)
                     self._ip_connected = False
                     if self._ever_ip_connected:
                         if self._disconnect_started is None:
@@ -350,6 +366,9 @@ class IP150_MQTT:
         except Exception as error:
             logging.warning('Alarm command failed: %s', error)
             self._ip_connected = False
+            if self._disconnect_started is None:
+                self._disconnect_started = time.monotonic()
+            self._diag_state(client, 'reconnecting', error)
             client.publish(*self._will)
             self._start_ip150_reconnect(client)
 
