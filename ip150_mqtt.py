@@ -62,6 +62,7 @@ class IP150_MQTT:
         self._disconnect_started = None
         self._diag_state_value = None
         self._discovery_published = False
+        self._last_heartbeat_publish = 0.0
 
     def _diag_publish(self, client, name, value):
         client.publish(self._diag_prefix + '/' + name, str(value), 1, True)
@@ -73,10 +74,14 @@ class IP150_MQTT:
         if error is not None:
             self._diag_publish(client, 'last_error', error)
 
-    def _diag_heartbeat(self, client):
+    def _diag_heartbeat(self, client, force=False):
+        now = time.monotonic()
+        if not force and now - self._last_heartbeat_publish < 60:
+            return
         self._diag_publish(
             client, 'last_seen',
             datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds'))
+        self._last_heartbeat_publish = now
 
     def _publish_discovery(self, client):
         if self._discovery_published:
@@ -204,6 +209,7 @@ class IP150_MQTT:
                         self._diag_publish(client, 'last_outage_seconds', '{:.1f}'.format(outage))
                         self._disconnect_started = None
                     self._diag_state(client, 'connected')
+                    self._diag_heartbeat(client, force=True)
                     client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
                     logging.warning('Paradox IP150 connection restored.')
                     return
