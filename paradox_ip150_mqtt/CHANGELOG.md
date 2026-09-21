@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.3
+
+- Increase IP150 status HTTP connect/read timeouts so a 1-second polling interval does not imply a 0.5-second TCP connect timeout.
+- Keep the configured refresh rate as the polling cadence rather than using it as an unrealistically short network timeout.
+- Clean up reconnect log punctuation.
+
 ## 1.5.2
 
 - Forward SIGTERM/SIGINT from the Home Assistant app container to the Python process.
