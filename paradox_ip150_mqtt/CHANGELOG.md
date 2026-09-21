@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.7
+
+- Expose IP150 connectivity as a Home Assistant connectivity binary sensor.
+- Use Russian names for diagnostic entities.
+- Mark all diagnostic entities with the Home Assistant diagnostic category.
+- Remove the obsolete 1.5.6 Connection sensor discovery entry.
+
 ## 1.5.6
 
 - Add Home Assistant MQTT Discovery for five IP150 diagnostic sensors.
