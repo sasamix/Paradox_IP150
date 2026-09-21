@@ -71,7 +71,9 @@ class IP150_MQTT:
             self._diag_publish(client, 'state', state)
             self._diag_state_value = state
         if error is not None:
-            self._diag_publish(client, 'last_error', error)
+            error_text = str(error).strip()
+            if error_text:
+                self._diag_publish(client, 'last_error', error_text)
 
     def _publish_discovery(self, client):
         if self._discovery_published:
@@ -153,11 +155,48 @@ class IP150_MQTT:
     def on_paradox_update_error(self, error, client):
         if self._stopping:
             return
-        logging.warning('Lost connection to Paradox IP150: %s', error)
+        logging.warning('IP150 polling failed repeatedly: %s', error)
+        # First try to rebuild the IP150 web session without exposing a
+        # disconnect to Home Assistant. Only the normal reconnect worker will
+        # publish "reconnecting" if this recovery attempt fails.
+        threading.Thread(
+            target=self._recover_ip150_session,
+            args=(client, error),
+            daemon=True).start()
+
+    def _recover_ip150_session(self, client, original_error):
+        if not self._reconnect_lock.acquire(False):
+            return
+        try:
+            try:
+                try:
+                    if self.ip.logged_in:
+                        self.ip.logout()
+                except Exception as cleanup_error:
+                    logging.debug('Cleanup before session recovery failed: %s', cleanup_error)
+                new_ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
+                new_ip.login(self._cfg['PANEL_CODE'], self._cfg['PANEL_PASSWORD'])
+                new_ip.get_updates(
+                    on_update=self.on_paradox_new_state,
+                    on_error=self.on_paradox_update_error,
+                    userdata=client,
+                    poll_interval=self._cfg['REFRESH_RATE'])
+                self.ip = new_ip
+                self._ip_connected = True
+                logging.warning('Paradox IP150 session recovered without connection outage.')
+                return
+            except Exception as recovery_error:
+                logging.warning(
+                    'Silent IP150 session recovery failed: %s', recovery_error)
+        finally:
+            self._reconnect_lock.release()
+
+        if self._stopping:
+            return
         self._ip_connected = False
         if self._disconnect_started is None:
             self._disconnect_started = time.monotonic()
-        self._diag_state(client, 'reconnecting', error)
+        self._diag_state(client, 'reconnecting', original_error)
         client.publish(*self._will)
         self._start_ip150_reconnect(client)
 
