@@ -256,11 +256,13 @@ class Paradox_IP150:
             result[table] = mapped
         return result
 
-    def _get_updates(self, on_update, on_error, userdata, interval):
+    def _get_updates(self, on_update, on_error, on_success, userdata, interval):
         try:
             previous = {}
             while not self._stop_updates.wait(interval):
                 current = self.get_info(interval)
+                if on_success:
+                    on_success(userdata)
                 updated = {}
                 for group, values in current.items():
                     if group not in previous:
@@ -282,7 +284,7 @@ class Paradox_IP150:
             self._stop_updates.clear()
 
     @_logged_only
-    def get_updates(self, on_update=None, on_error=None, userdata=None, poll_interval=1.0):
+    def get_updates(self, on_update=None, on_error=None, on_success=None, userdata=None, poll_interval=1.0):
         if not on_update:
             raise Paradox_IP150_Error('The callable on_update must be provided.')
         if poll_interval <= 0:
@@ -292,7 +294,7 @@ class Paradox_IP150:
         self._stop_updates.clear()
         self._updates = threading.Thread(
             target=self._get_updates,
-            args=(on_update, on_error, userdata, poll_interval),
+            args=(on_update, on_error, on_success, userdata, poll_interval),
             daemon=True,
             name='ip150-updates')
         self._updates.start()
