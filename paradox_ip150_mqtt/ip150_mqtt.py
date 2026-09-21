@@ -3,7 +3,6 @@ import json
 import logging
 import signal
 import threading
-from datetime import datetime, timezone
 import time
 import urllib.parse
 
@@ -55,6 +54,7 @@ class IP150_MQTT:
         self._stopping = False
         self._ip_connected = False
         self._ever_ip_connected = False
+        self._recovery_active = False
         self.ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
         self._mqtt_client = None
         ctrl_topic = self._cfg['CTRL_PUBLISH_TOPIC'].strip('/').split('/')
@@ -154,8 +154,9 @@ class IP150_MQTT:
                     client.publish(self._cfg[mapping['topic']] + '/' + str(number), value, 1, True)
 
     def on_paradox_update_error(self, error, client):
-        if self._stopping:
+        if self._stopping or self._recovery_active:
             return
+        self._recovery_active = True
         logging.warning('IP150 polling failed repeatedly: %s', error)
         # First try to rebuild the IP150 web session without exposing a
         # disconnect to Home Assistant. Only the normal reconnect worker will
@@ -166,41 +167,65 @@ class IP150_MQTT:
             daemon=True).start()
 
     def _recover_ip150_session(self, client, original_error):
+        # Recovery owns the reconnect lock for the whole grace period. HA
+        # remains connected while we try to replace the broken web session.
         if not self._reconnect_lock.acquire(False):
+            self._recovery_active = False
             return
+        recovery_started = time.monotonic()
+        last_error = original_error
         try:
-            try:
+            for attempt, delay_after_failure in enumerate((1, 2, 4, 0), start=1):
+                if self._stopping:
+                    return
                 try:
-                    if self.ip.logged_in:
-                        self.ip.logout()
-                except Exception as cleanup_error:
-                    logging.debug('Cleanup before session recovery failed: %s', cleanup_error)
-                new_ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
-                new_ip.login(self._cfg['PANEL_CODE'], self._cfg['PANEL_PASSWORD'])
-                new_ip.get_updates(
-                    on_update=self.on_paradox_new_state,
-                    on_error=self.on_paradox_update_error,
-                    userdata=client,
-                    poll_interval=self._cfg['REFRESH_RATE'])
-                self.ip = new_ip
-                self._ip_connected = True
-                self._ever_ip_connected = True
-                logging.warning('Paradox IP150 session recovered without connection outage.')
-                return
-            except Exception as recovery_error:
-                logging.warning(
-                    'Silent IP150 session recovery failed: %s', recovery_error)
+                    try:
+                        self.ip.logout(force_remote=True)
+                    except Exception as cleanup_error:
+                        logging.debug(
+                            'Cleanup before session recovery failed: %s',
+                            cleanup_error)
+                    new_ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
+                    new_ip.login(
+                        self._cfg['PANEL_CODE'],
+                        self._cfg['PANEL_PASSWORD'])
+                    # Verify the new session synchronously before swapping it
+                    # in and before starting its background poller.
+                    current = new_ip.get_info(self._cfg['REFRESH_RATE'])
+                    self.ip = new_ip
+                    self._ip_connected = True
+                    self._ever_ip_connected = True
+                    self.on_paradox_new_state(current, client)
+                    new_ip.get_updates(
+                        on_update=self.on_paradox_new_state,
+                        on_error=self.on_paradox_update_error,
+                        userdata=client,
+                        poll_interval=self._cfg['REFRESH_RATE'])
+                    logging.warning(
+                        'Paradox IP150 session recovered silently on attempt %s.',
+                        attempt)
+                    return
+                except Exception as recovery_error:
+                    last_error = recovery_error
+                    logging.warning(
+                        'Silent IP150 session recovery attempt %s/4 failed: %s',
+                        attempt, recovery_error)
+                    if delay_after_failure and self._wait_or_stop(
+                            delay_after_failure):
+                        return
+
+            # Only now expose an outage to Home Assistant. Measure it from
+            # the first failed recovery attempt, not from this publication.
+            self._ip_connected = False
+            self._disconnect_started = recovery_started
+            self._diag_state(client, 'reconnecting', last_error)
+            client.publish(*self._will)
         finally:
+            self._recovery_active = False
             self._reconnect_lock.release()
 
-        if self._stopping:
-            return
-        self._ip_connected = False
-        if self._disconnect_started is None:
-            self._disconnect_started = time.monotonic()
-        self._diag_state(client, 'reconnecting', original_error)
-        client.publish(*self._will)
-        self._start_ip150_reconnect(client)
+        if not self._stopping:
+            self._start_ip150_reconnect(client)
 
     def _start_ip150_reconnect(self, client):
         if not self._stopping:
@@ -219,12 +244,14 @@ class IP150_MQTT:
                         logging.debug('Cleanup before reconnect failed: %s', error)
                     new_ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
                     new_ip.login(self._cfg['PANEL_CODE'], self._cfg['PANEL_PASSWORD'])
+                    current = new_ip.get_info(self._cfg['REFRESH_RATE'])
+                    self.ip = new_ip
+                    self.on_paradox_new_state(current, client)
                     new_ip.get_updates(
                         on_update=self.on_paradox_new_state,
                         on_error=self.on_paradox_update_error,
                         userdata=client,
                         poll_interval=self._cfg['REFRESH_RATE'])
-                    self.ip = new_ip
                     self._ip_connected = True
                     first_connection = not self._ever_ip_connected
                     self._ever_ip_connected = True
@@ -277,8 +304,8 @@ class IP150_MQTT:
             self._diag_state(client, 'connected')
             client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
         else:
-            # Initial IP150 connection is still pending. Do not report a
-            # disconnect/error until a working IP150 session has existed.
+            # Startup is not an outage: keep retained diagnostics untouched
+            # until the first IP150 session has actually been established.
             self._start_ip150_reconnect(client)
 
     def on_mqtt_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
