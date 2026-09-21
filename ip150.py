@@ -26,10 +26,9 @@ class KeepAlive(threading.Thread):
         try:
             requests.get('{}/keep_alive.html'.format(
                 self.ip150url), params={'msgid': 1}, verify=False, timeout=(self.interval/2,self.interval))
-        except requests.Timeout as t:
-            # This keepalive didn't go through. No big deal.
-            # We log it and move on; we'll keepalive the next time we're called.
-            logging.debug('Keepalive request timed out: {}'.format(t))
+        except requests.RequestException as e:
+            # A temporary HTTP failure must not kill the keepalive thread.
+            logging.warning('Keepalive request failed: {}'.format(e))
 
     def run(self):
         while not self.stopped.wait(self.interval):
@@ -141,7 +140,7 @@ class Paradox_IP150:
 
         # Ask for a login page, to get the 'sess' salt
         lpage = requests.get(
-            '{}/login_page.html'.format(self.ip150url), verify=False)
+            '{}/login_page.html'.format(self.ip150url), verify=False, timeout=(5, 10))
 
         # Extract the 'sess' salt
         off = lpage.text.find('loginaff')
@@ -153,7 +152,7 @@ class Paradox_IP150:
         # Compute salted credentials and do the login
         creds = self._prep_cred(user, pwd, sess)
         defpage = requests.get('{}/default.html'.format(
-            self.ip150url), params=creds, verify=False)
+            self.ip150url), params=creds, verify=False, timeout=(5, 10))
         if defpage.text.count("top.location.href='login_page.html';") > 0:
             # They're redirecting us to the login page; credentials didn't work
             raise Paradox_IP150_Error(
@@ -176,7 +175,7 @@ class Paradox_IP150:
             self._stop_updates.set()
             self._updates = None
         logout = requests.get(
-            '{}/logout.html'.format(self.ip150url), verify=False)
+            '{}/logout.html'.format(self.ip150url), verify=False, timeout=(5, 10))
         if logout.status_code != 200:
             raise Paradox_IP150_Error('Error logging out')
         self.logged_in = False
@@ -193,11 +192,13 @@ class Paradox_IP150:
         while result == None and retries > 0:
             try:
                 result = requests.get(url, params=params, **kwargs)
-            except requests.Timeout as t:
+            except requests.RequestException as e:
                 retries = retries-1
-                logging.debug('GET request timed out. {} attempts left: {}'.format(retries, t))
+                logging.warning('GET request failed. {} attempts left: {}'.format(retries, e))
+                if retries > 0:
+                    time.sleep(0.5)
         if retries == 0:
-            raise Paradox_IP150_Error('GET request permanently timed out.')
+            raise Paradox_IP150_Error('GET request permanently failed.')
         return result
 
     @_logged_only
