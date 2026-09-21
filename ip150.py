@@ -196,19 +196,22 @@ class Paradox_IP150:
             self._keepalive.start()
         logging.info('Successfully logged into the Paradox web interface.')
 
-    @_logged_only
     def logout(self):
+        # Always clean up local workers, even when the IP150 session has
+        # already expired and logged_in was cleared by get_info().
+        was_logged_in = self.logged_in
         self.cancel_updates(silent=True)
         if self._keepalive:
             self._keepalive.cancel()
             self._keepalive.join(timeout=10)
             self._keepalive = None
         try:
-            response = requests.get(
-                self.ip150url + '/logout.html',
-                verify=False,
-                timeout=(5, 10))
-            self._check_response(response, 'Logout')
+            if was_logged_in:
+                response = requests.get(
+                    self.ip150url + '/logout.html',
+                    verify=False,
+                    timeout=(5, 10))
+                self._check_response(response, 'Logout')
         finally:
             self.logged_in = False
         logging.info('Logged out from the Paradox web interface.')
@@ -332,7 +335,6 @@ class Paradox_IP150:
             name='ip150-updates')
         self._updates.start()
 
-    @_logged_only
     def cancel_updates(self, silent=False):
         if self._updates and self._updates.is_alive():
             thread = self._updates
