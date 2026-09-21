@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6.0
+## 1.5.1
 
 - Validate HTTP status codes and convert transport failures to concise IP150 errors.
 - Detect expired/replaced IP150 sessions and trigger automatic recovery.
