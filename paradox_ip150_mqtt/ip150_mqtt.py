@@ -212,8 +212,7 @@ class IP150_MQTT:
             while not self._stopping:
                 try:
                     try:
-                        if self.ip.logged_in:
-                            self.ip.logout()
+                        self.ip.logout()
                     except Exception as error:
                         logging.debug('Cleanup before reconnect failed: %s', error)
                     new_ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
@@ -342,8 +341,7 @@ class IP150_MQTT:
         except Exception:
             pass
         try:
-            if self.ip.logged_in:
-                self.ip.logout()
+            self.ip.logout()
         except Exception as error:
             logging.debug('IP150 logout failed during signal shutdown: %s', error)
         try:
