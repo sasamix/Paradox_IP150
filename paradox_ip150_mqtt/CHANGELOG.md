@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.6
+
+- Add Home Assistant MQTT Discovery for five IP150 diagnostic sensors.
+- Publish diagnostic connection state only when it changes.
+- Keep `last_seen` as the per-poll heartbeat.
+
 ## 1.5.5
 
 - Move diagnostic MQTT topics to `paradox/diagnostic/*` when using the default topic root.
