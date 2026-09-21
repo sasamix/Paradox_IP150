@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.4
+
+- Publish retained MQTT diagnostics for IP150 connection state, last error, last successful poll, reconnect count, and last outage duration.
+- Keep normal alarm and zone topics unchanged.
+
 ## 1.5.3
 
 - Increase IP150 status HTTP connect/read timeouts so a 1-second polling interval does not imply a 0.5-second TCP connect timeout.
