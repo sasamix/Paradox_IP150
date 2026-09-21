@@ -70,6 +70,7 @@ class IP150_MQTT():
 		self._will = (self._cfg['CTRL_PUBLISH_TOPIC'], 'Disconnected', 1, True)
 		self._reconnect_lock = threading.Lock()
 		self._stopping = False
+		self._ip_connected = False
 
 	def on_paradox_new_state(self, state, client):
 		for d1 in state.keys():
@@ -82,6 +83,7 @@ class IP150_MQTT():
 
 	def on_paradox_update_error(self, e, client):
 		logging.warning('Lost connection to Paradox IP150: {}'.format(e))
+		self._ip_connected = False
 		client.publish(*self._will)
 		if not self._stopping:
 			threading.Thread(target=self._reconnect_ip150, args=(client,), daemon=True).start()
@@ -123,9 +125,14 @@ class IP150_MQTT():
 
 		client.subscribe([(self._cfg['ALARM_SUBSCRIBE_TOPIC']+'/+', 1), (self._cfg['CTRL_SUBSCRIBE_TOPIC'], 1)])
 
-		client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
-
-		self.ip.get_updates(on_update=self.on_paradox_new_state, on_error=self.on_paradox_update_error, userdata=client, poll_interval=self._cfg['REFRESH_RATE'])
+		# MQTT is independent from the IP150 session. If IP150 is unavailable at
+		# startup, keep MQTT alive and let the reconnect worker recover it.
+		client.publish(*self._will)
+		if self._ip_connected:
+			self.ip.get_updates(on_update=self.on_paradox_new_state, on_error=self.on_paradox_update_error, userdata=client, poll_interval=self._cfg['REFRESH_RATE'])
+			client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
+		else:
+			threading.Thread(target=self._reconnect_ip150, args=(client,), daemon=True).start()
 
 
 	def on_mqtt_alarm_message(self, client, userdata, message):
@@ -174,7 +181,6 @@ class IP150_MQTT():
 		mqtt_hostname, mqtt_port = self.parse_mqtt_url()
 
 		self.ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
-		self.ip.login(self._cfg['PANEL_CODE'], self._cfg['PANEL_PASSWORD'])
 
 		mqc = mqtt.Client()
 		mqc.on_connect = self.on_mqtt_connect
