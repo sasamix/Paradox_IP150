@@ -1,3 +1,8 @@
+## 1.5.8
+- Throttle `last_seen` diagnostics to once per minute while keeping IP150 polling unchanged.
+- Publish `last_seen` immediately after connection recovery.
+- Rename the MQTT device to `Paradox IP150` to distinguish it from the Supervisor app.
+
 # 1.3 - 2022-11-13
 - Update dependencies and add-on metadata
 - Handle connection timeouts to Paradox web interface
