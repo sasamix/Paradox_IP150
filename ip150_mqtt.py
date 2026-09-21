@@ -73,15 +73,6 @@ class IP150_MQTT:
         if error is not None:
             self._diag_publish(client, 'last_error', error)
 
-    def _diag_heartbeat(self, client, force=False):
-        now = time.monotonic()
-        if not force and now - self._last_heartbeat_publish < 60:
-            return
-        self._diag_publish(
-            client, 'last_seen',
-            datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds'))
-        self._last_heartbeat_publish = now
-
     def _publish_discovery(self, client):
         if self._discovery_published:
             return
