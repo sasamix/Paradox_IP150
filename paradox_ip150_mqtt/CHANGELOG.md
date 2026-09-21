@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.5
+
+- Move diagnostic MQTT topics to `paradox/diagnostic/*` when using the default topic root.
+- Update `last_seen` after every successful IP150 status poll, even when no alarm or zone state changed.
+
 ## 1.5.4
 
 - Publish retained MQTT diagnostics for IP150 connection state, last error, last successful poll, reconnect count, and last outage duration.
