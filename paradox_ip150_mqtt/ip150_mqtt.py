@@ -55,6 +55,7 @@ class IP150_MQTT:
         self._ip_connected = False
         self._ever_ip_connected = False
         self._recovery_active = False
+        self._initial_connect_active = False
         self.ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
         self._mqtt_client = None
         ctrl_topic = self._cfg['CTRL_PUBLISH_TOPIC'].strip('/').split('/')
@@ -228,8 +229,16 @@ class IP150_MQTT:
             self._start_ip150_reconnect(client)
 
     def _start_ip150_reconnect(self, client):
-        if not self._stopping:
-            threading.Thread(target=self._reconnect_ip150, args=(client,), daemon=True).start()
+        if self._stopping:
+            return
+        if not self._ever_ip_connected:
+            if self._initial_connect_active:
+                return
+            self._initial_connect_active = True
+        threading.Thread(
+            target=self._reconnect_ip150,
+            args=(client,),
+            daemon=True).start()
 
     def _reconnect_ip150(self, client):
         if not self._reconnect_lock.acquire(False):
@@ -283,6 +292,7 @@ class IP150_MQTT:
                         return
                     delay = min(delay * 2, 30)
         finally:
+            self._initial_connect_active = False
             self._reconnect_lock.release()
 
     def _wait_or_stop(self, delay):
