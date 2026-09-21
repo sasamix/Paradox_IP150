@@ -143,12 +143,35 @@ class Paradox_IP150:
                 'Could not retrieve IP150 login page: {}'.format(error)) from error
         self._check_response(login_page, 'Login page')
 
-        match = re.search(r'loginaff.{0,20}?([A-Za-z0-9]{16})', login_page.text, re.DOTALL)
+        match = None
+        # IP150 can briefly return an incomplete/stale login page while its
+        # web server is recovering. Retry the page before treating this as a
+        # persistent session/login problem.
+        for attempt in range(1, 4):
+            match = re.search(
+                r'loginaff.{0,20}?([A-Za-z0-9]{16})',
+                login_page.text,
+                re.DOTALL)
+            if match:
+                break
+            if attempt < 3:
+                time.sleep(1)
+                try:
+                    login_page = requests.get(
+                        self.ip150url + '/login_page.html',
+                        verify=False,
+                        timeout=(5, 10))
+                    self._check_response(login_page, 'Login page')
+                except requests.RequestException as error:
+                    logging.warning(
+                        'IP150 login page retry %s failed: %s',
+                        attempt, error)
+
         if not match:
             # Do not dump the complete IP150 HTML into logs: it is noisy and
             # can contain user/site-specific data.
             raise Paradox_IP150_Error(
-                'Unexpected IP150 login page; another web session may be active or the firmware is unsupported.')
+                'Unexpected IP150 login page after 3 attempts; another web session may be active or the firmware is unsupported.')
         sess = match.group(1)
 
         creds = self._prep_cred(user, pwd, sess)
