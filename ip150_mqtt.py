@@ -1,6 +1,8 @@
 import argparse
 import json
 import logging
+import threading
+import time
 import urllib.parse
 
 import paho.mqtt.client as mqtt
@@ -66,6 +68,8 @@ class IP150_MQTT():
 			# Can't log this before, as we need to call basicConfig first
 			logging.warning('Wrong log level provided: "{}". Overriding with WARNING.'.format(self._cfg['LOG_LEVEL']))
 		self._will = (self._cfg['CTRL_PUBLISH_TOPIC'], 'Disconnected', 1, True)
+		self._reconnect_lock = threading.Lock()
+		self._stopping = False
 
 	def on_paradox_new_state(self, state, client):
 		for d1 in state.keys():
@@ -77,10 +81,41 @@ class IP150_MQTT():
 						client.publish(self._cfg[d1_map['topic']]+'/'+str(d2[0]), publish_state, 1, True)
 
 	def on_paradox_update_error(self, e, client):
-		# We try to do a proper shutdown,
-		# like if the user asked us to disconnect via MQTT
-		logging.warning('Error getting Paradox status update. Doing clean shutdown. Error details: {}'.format(e))
-		self.mqtt_ctrl_disconnect(client)
+		logging.warning('Lost connection to Paradox IP150: {}'.format(e))
+		client.publish(*self._will)
+		if not self._stopping:
+			threading.Thread(target=self._reconnect_ip150, args=(client,), daemon=True).start()
+
+	def _reconnect_ip150(self, client):
+		# Only one reconnect loop may run at a time.
+		if not self._reconnect_lock.acquire(False):
+			return
+		try:
+			delay = 5
+			while not self._stopping:
+				try:
+					logging.info('Trying to reconnect to Paradox IP150...')
+					try:
+						if self.ip.logged_in:
+							self.ip.logout()
+					except Exception as e:
+						logging.debug('Cleanup before reconnect failed: {}'.format(e))
+
+					self.ip = ip150.Paradox_IP150(self._cfg['IP150_ADDRESS'])
+					self.ip.login(self._cfg['PANEL_CODE'], self._cfg['PANEL_PASSWORD'])
+					self.ip.get_updates(on_update=self.on_paradox_new_state,
+										on_error=self.on_paradox_update_error,
+										userdata=client,
+										poll_interval=self._cfg['REFRESH_RATE'])
+					client.publish(self._cfg['CTRL_PUBLISH_TOPIC'], 'Connected', 1, True)
+					logging.info('Successfully reconnected to Paradox IP150.')
+					return
+				except Exception as e:
+					logging.warning('Paradox IP150 reconnect failed: {}. Retrying in {} seconds.'.format(e, delay))
+					time.sleep(delay)
+					delay = min(delay * 2, 30)
+		finally:
+			self._reconnect_lock.release()
 
 	def on_mqtt_connect(self, client, userdata, flags, rc):
 		if rc != 0:
@@ -102,10 +137,17 @@ class IP150_MQTT():
 				self.ip.set_area_action(area,action)
 
 	def mqtt_ctrl_disconnect(self, client):
-		self.ip.cancel_updates()
+		self._stopping = True
+		try:
+			self.ip.cancel_updates()
+		except Exception:
+			pass
 		client.publish(*self._will)
 		client.disconnect()
-		self.ip.logout()
+		try:
+			self.ip.logout()
+		except Exception as e:
+			logging.debug('IP150 logout failed during shutdown: {}'.format(e))
 
 	def on_mqtt_ctrl_message(self, client, userdata, message):
 		switcher = {
