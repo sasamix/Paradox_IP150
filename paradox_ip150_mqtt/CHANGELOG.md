@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.0
+
+- Validate HTTP status codes and convert transport failures to concise IP150 errors.
+- Detect expired/replaced IP150 sessions and trigger automatic recovery.
+- Stop dumping full unexpected login HTML into logs.
+- Harden JavaScript array parsing and handle missing/multiple script tags.
+- Guard against duplicate polling threads and join polling cleanly on shutdown.
+- Preserve newly added status entries and tolerate unknown IP150 state values.
+- Normalize IP150 URLs and improve command/session error handling.
+
 ## 1.5.0
 
 - Update requests, Beautiful Soup, and Paho MQTT for current Python 3.14 environments.
