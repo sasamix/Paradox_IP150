@@ -196,8 +196,9 @@ class Paradox_IP150:
 
 
         # Zone names are exposed by index.html as
-        # tbl_zone = [enabled, label, enabled, label, ...].
-        # Only entries with enabled == 1 are configured panel zones.
+        # tbl_zone = [area, label, area, label, ...].
+        # A positive area value means the zone is configured. Do not filter
+        # only area 1: installations can use multiple partitions/areas.
         self.zone_metadata = {}
         last_zone_meta_error = None
         for attempt in range(1, 6):
@@ -219,15 +220,18 @@ class Paradox_IP150:
                 zone_meta = self._js2array('tbl_zone', index_script)
                 parsed_meta = {}
                 for offset in range(0, len(zone_meta) - 1, 2):
-                    enabled = zone_meta[offset]
+                    area = zone_meta[offset]
                     label = str(zone_meta[offset + 1]).strip()
                     number = (offset // 2) + 1
                     try:
-                        enabled_value = int(enabled)
+                        area_number = int(area)
                     except (TypeError, ValueError):
-                        enabled_value = 0
-                    if enabled_value == 1 and label:
-                        parsed_meta[number] = {'name': label}
+                        area_number = 0
+                    if area_number > 0 and label:
+                        parsed_meta[number] = {
+                            'name': label,
+                            'area': area_number
+                        }
                 self.zone_metadata = parsed_meta
                 logging.info(
                     'IP150 discovered %s configured zones from tbl_zone.',
@@ -327,7 +331,7 @@ class Paradox_IP150:
         script = '\n'.join(scripts)
         result = {
             'zones_meta': [
-                (number, meta['name'])
+                (number, meta['area'], meta['name'])
                 for number, meta in sorted(self.zone_metadata.items())
             ]
         }
