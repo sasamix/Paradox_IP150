@@ -189,6 +189,7 @@ class Paradox_IP150:
         if "top.location.href='login_page.html';" in default_page.text:
             raise Paradox_IP150_Error('Could not login, wrong credentials provided.')
 
+
         time.sleep(3)
         self.logged_in = True
         if keep_alive_interval:
@@ -280,6 +281,23 @@ class Paradox_IP150:
                     state = 'Unknown_{}'.format(value)
                 mapped.append((index, state))
             result[table] = mapped
+        # Active panel troubles are reported by statuslive.html as
+        # indexes into the tbl_troublename table from index.html.
+        trouble_match = re.search(
+            r'\btbl_troubles\s*=\s*new\s+Array\((.*?)\)\s*;',
+            script, re.DOTALL)
+        if trouble_match:
+            raw = trouble_match.group(1).strip()
+            try:
+                result['troubles'] = json.loads('[' + raw + ']') if raw else []
+            except json.JSONDecodeError:
+                logging.warning(
+                    'Could not parse IP150 tbl_troubles payload: %r', raw[:200])
+                result['troubles'] = None
+        else:
+            result['troubles'] = None
+
+
         return result
 
     def _get_updates(self, on_update, on_error, on_success, userdata, interval):
@@ -297,11 +315,25 @@ class Paradox_IP150:
                         if group not in previous:
                             updated[group] = values
                             continue
-                        for cur, prev in zip(values, previous[group]):
+
+                        previous_values = previous[group]
+                        if group == 'troubles':
+                            if values != previous_values:
+                                updated[group] = values
+                            continue
+                        # Optional scalar/None diagnostics (for example
+                        # firmware-specific trouble data) are not indexed
+                        # status tables. Compare them atomically.
+                        if values is None or previous_values is None:
+                            if values != previous_values:
+                                updated[group] = values
+                            continue
+
+                        for cur, prev in zip(values, previous_values):
                             if cur != prev:
                                 updated.setdefault(group, []).append(cur)
-                        if len(values) > len(previous[group]):
-                            updated.setdefault(group, []).extend(values[len(previous[group]):])
+                        if len(values) > len(previous_values):
+                            updated.setdefault(group, []).extend(values[len(previous_values):])
                     if updated:
                         on_update(updated, userdata)
                     previous = current
