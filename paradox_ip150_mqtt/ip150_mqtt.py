@@ -71,7 +71,8 @@ class IP150_MQTT:
                 'Disarmed': 'disarmed', 'Armed': 'armed_away',
                 'Triggered': 'triggered', 'Armed_sleep': 'armed_night',
                 'Armed_stay': 'armed_home', 'Entry_delay': 'pending',
-                'Exit_delay': 'arming', 'Ready': 'disarmed'
+                'Exit_delay': 'arming', 'Ready': 'disarmed',
+                'Not_ready': 'disarmed'
             }
         },
         'zones_status': {
@@ -112,6 +113,7 @@ class IP150_MQTT:
         self._disconnect_started = None
         self._diag_state_value = None
         self._discovery_published = False
+        self._discovered_zones = set()
 
     def _diag_publish(self, client, name, value):
         client.publish(self._diag_prefix + '/' + name, str(value), 1, True)
@@ -229,6 +231,31 @@ class IP150_MQTT:
             '', 1, True)
         self._discovery_published = True
 
+    def _publish_zone_discovery(self, client, number):
+        if number in self._discovered_zones:
+            return
+        payload = {
+            'name': 'Zone {}'.format(number),
+            'unique_id': 'paradox_zone_{}'.format(number),
+            'state_topic': self._cfg['ZONE_PUBLISH_TOPIC'] + '/' + str(number),
+            'payload_on': 'on',
+            'payload_off': 'off',
+            'qos': 1,
+            'availability_topic': self._cfg['CTRL_PUBLISH_TOPIC'],
+            'payload_available': 'Connected',
+            'payload_not_available': 'Disconnected',
+            'device': {
+                'identifiers': ['paradox_ip150_mqtt'],
+                'name': 'Paradox IP150',
+                'manufacturer': 'Paradox',
+                'model': 'IP150 MQTT Adapter'
+            }
+        }
+        client.publish(
+            'homeassistant/binary_sensor/paradox_ip150/zone_{}/config'.format(number),
+            json.dumps(payload), 1, True)
+        self._discovered_zones.add(number)
+
     def on_paradox_new_state(self, state, client):
         troubles = state.get('troubles')
         if troubles is not None:
@@ -261,6 +288,8 @@ class IP150_MQTT:
             if not mapping:
                 continue
             for number, state_name in values:
+                if group == 'zones_status':
+                    self._publish_zone_discovery(client, number)
                 value = mapping['map'].get(state_name)
                 if value:
                     client.publish(self._cfg[mapping['topic']] + '/' + str(number), value, 1, True)
@@ -317,6 +346,18 @@ class IP150_MQTT:
                     logging.warning(
                         'Paradox IP150 session recovered silently on attempt %s.',
                         attempt)
+                    return
+                except ip150.Paradox_IP150_Unsupported_Firmware_Error as recovery_error:
+                    if new_ip is not None and new_ip is not self.ip:
+                        try:
+                            new_ip.logout()
+                        except Exception:
+                            pass
+                    self._ip_connected = False
+                    self._disconnect_started = recovery_started
+                    self._diag_state(client, 'reconnecting', recovery_error)
+                    client.publish(*self._will)
+                    logging.error('%s', recovery_error)
                     return
                 except Exception as recovery_error:
                     if new_ip is not None and new_ip is not self.ip:
@@ -405,6 +446,19 @@ class IP150_MQTT:
                         logging.info('Paradox IP150 initial connection established.')
                     else:
                         logging.warning('Paradox IP150 connection restored.')
+                    return
+                except ip150.Paradox_IP150_Unsupported_Firmware_Error as error:
+                    if new_ip is not None and new_ip is not self.ip:
+                        try:
+                            new_ip.logout()
+                        except Exception:
+                            pass
+                    self._ip_connected = False
+                    if self._disconnect_started is None:
+                        self._disconnect_started = time.monotonic()
+                    self._diag_state(client, 'reconnecting', error)
+                    client.publish(*self._will)
+                    logging.error('%s Automatic reconnect stopped until the app is restarted.', error)
                     return
                 except Exception as error:
                     if new_ip is not None and new_ip is not self.ip:
