@@ -18,6 +18,10 @@ class Paradox_IP150_Error(Exception):
     pass
 
 
+class Paradox_IP150_Unsupported_Firmware_Error(Paradox_IP150_Error):
+    pass
+
+
 class KeepAlive(threading.Thread):
     def __init__(self, ip150url, interval):
         super().__init__(daemon=True, name='ip150-keepalive')
@@ -237,6 +241,10 @@ class Paradox_IP150:
         for attempt in range(1, 6):
             try:
                 response = requests.get(url, params=params, **kwargs)
+                if response.status_code == 404 and url.rstrip('/').endswith('/statuslive.html'):
+                    raise Paradox_IP150_Unsupported_Firmware_Error(
+                        'IP150 firmware does not expose /statuslive.html (HTTP 404). '
+                        'This firmware is not supported by the classic web-status backend.')
                 response.raise_for_status()
                 return response
             except requests.RequestException as error:
