@@ -211,6 +211,7 @@ class IP150_MQTT:
                 'payload_disarm': 'DISARM',
                 'payload_arm_home': 'ARM_HOME',
                 'payload_arm_away': 'ARM_AWAY',
+                'supported_features': ['arm_home', 'arm_away'],
                 'device': device
             }
             client.publish(
