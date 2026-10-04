@@ -308,12 +308,17 @@ class Paradox_IP150:
                 continue
             raw_value = ' '.join(match.group(2).split())
             diagnostic_arrays[name] = raw_value[:300]
-        if diagnostic_arrays:
-            logging.warning(
-                'IP150 STATUSLIVE ARRAYS: %s',
-                json.dumps(diagnostic_arrays, ensure_ascii=True, sort_keys=True))
-        else:
-            logging.warning('IP150 STATUSLIVE ARRAYS: none found besides known status arrays.')
+        # Emit this temporary probe only once per process. Repeating it
+        # every poll adds no information and obscures real IP150 warnings.
+        if not getattr(self, '_statuslive_arrays_logged', False):
+            if diagnostic_arrays:
+                logging.warning(
+                    'IP150 STATUSLIVE ARRAYS: %s',
+                    json.dumps(diagnostic_arrays, ensure_ascii=True, sort_keys=True))
+            else:
+                logging.warning(
+                    'IP150 STATUSLIVE ARRAYS: none found besides known status arrays.')
+            self._statuslive_arrays_logged = True
 
         return result
 
