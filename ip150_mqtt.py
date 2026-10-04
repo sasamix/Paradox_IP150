@@ -197,6 +197,31 @@ class IP150_MQTT:
             client.publish(
                 'homeassistant/binary_sensor/paradox_ip150/' + object_id + '/config',
                 json.dumps(payload), 1, True)
+        # Discover one aggregate alarm entity for the whole panel. It mirrors
+        # both areas and sends one command to all configured areas, matching the
+        # old helper-style "whole alarm" control without requiring manual YAML.
+        aggregate_payload = {
+            'name': 'Paradox IP150',
+            'unique_id': 'paradox_alarm_all_areas',
+            'state_topic': self._cfg['ALARM_PUBLISH_TOPIC'] + '/all',
+            'command_topic': self._cfg['ALARM_SUBSCRIBE_TOPIC'] + '/all',
+            'qos': 1,
+            'availability_topic': self._cfg['CTRL_PUBLISH_TOPIC'],
+            'payload_available': 'Connected',
+            'payload_not_available': 'Disconnected',
+            'payload_disarm': 'DISARM',
+            'payload_arm_home': 'ARM_HOME',
+            'payload_arm_away': 'ARM_AWAY',
+            'payload_arm_night': 'ARM_NIGHT',
+            'code_arm_required': False,
+            'code_disarm_required': False,
+            'supported_features': ['arm_home', 'arm_away', 'arm_night'],
+            'device': device
+        }
+        client.publish(
+            'homeassistant/alarm_control_panel/paradox_ip150/all/config',
+            json.dumps(aggregate_payload), 1, True)
+
         # Discover alarm areas so they no longer need manual YAML.
         # Areas 1 and 2 are currently used by this installation; publishing
         # discovery for both is harmless when an area is unused.
@@ -307,6 +332,29 @@ class IP150_MQTT:
                     troubles, '; '.join(labels))
             else:
                 logging.debug('IP150 reports no active panel troubles.')
+
+        # Publish a whole-panel state for the aggregate alarm entity.
+        # Mixed states must never look fully disarmed: prefer the most armed or
+        # urgent state currently reported by either area.
+        areas_status = state.get('areas_status')
+        if areas_status is not None:
+            mapped_areas = []
+            area_mapping = self._status_map['areas_status']['map']
+            for _number, area_state in areas_status:
+                mapped = area_mapping.get(area_state)
+                if mapped:
+                    mapped_areas.append(mapped)
+            aggregate_state = None
+            for candidate in (
+                    'triggered', 'arming', 'pending',
+                    'armed_away', 'armed_night', 'armed_home', 'disarmed'):
+                if candidate in mapped_areas:
+                    aggregate_state = candidate
+                    break
+            if aggregate_state is not None:
+                client.publish(
+                    self._cfg['ALARM_PUBLISH_TOPIC'] + '/all',
+                    aggregate_state, 1, True)
 
         for group, values in state.items():
             mapping = self._status_map.get(group)
@@ -539,7 +587,7 @@ class IP150_MQTT:
 
     def on_mqtt_alarm_message(self, client, userdata, message):
         area = message.topic.rpartition('/')[2]
-        if not area.isdigit():
+        if area != 'all' and not area.isdigit():
             return
         try:
             payload = message.payload.decode()
@@ -554,7 +602,12 @@ class IP150_MQTT:
             logging.warning('Ignoring alarm command for area %s while IP150 is disconnected.', area)
             return
         try:
-            self.ip.set_area_action(area, action)
+            if area == 'all':
+                # Whole-panel entity controls both known alarm areas.
+                for target_area in ('1', '2'):
+                    self.ip.set_area_action(target_area, action)
+            else:
+                self.ip.set_area_action(area, action)
         except Exception as error:
             logging.warning('Alarm command failed: %s', error)
             self._ip_connected = False
