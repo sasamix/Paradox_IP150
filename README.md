@@ -76,17 +76,19 @@ entity: alarm_control_panel.house_paradox
 name: Alarm
 ```
 
-#### configuration.yaml - Configuring PIR sensors (optional)
-```
-binary_sensor:
-  - platform: mqtt
-    state_topic: "paradox/zone/state/2"
-    name: "Study"
-    qos: 1
-    payload_on: "on"
-    payload_off: "off"
-    availability_topic: "paradox/ctrl/state"
-    payload_available: "Connected"
-    payload_not_available: "Disconnected"
-#Repeat for other Zones/Openings in your setup
-```
+#### Zone sensors and MQTT Discovery
+
+Configured alarm zones are discovered automatically through MQTT Discovery. The adapter reads the enabled zones and their labels from the IP150 web interface, so a separate `binary_sensor:` MQTT configuration is no longer required for those zones.
+
+After the first successful start, open the **Paradox IP150** device in Home Assistant and review the discovered zone entities. The IP150 provides the zone number/name, but it does not provide enough information to determine the Home Assistant binary-sensor class reliably.
+
+For each discovered zone, set the user-facing name and the appropriate **Show as / device class** in Home Assistant, for example:
+
+- Door / `door`
+- Window / `window`
+- Motion / `motion`
+- Smoke / `smoke`
+
+This is intentionally a Home Assistant-side customization. The adapter must not guess a device class from a zone label because panel installations and naming conventions differ.
+
+If you previously configured Paradox zones manually in YAML, remove or disable the old MQTT `binary_sensor` definitions after verifying that the discovered entities are working, otherwise Home Assistant will show duplicate zone entities.
