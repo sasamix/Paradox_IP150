@@ -189,6 +189,29 @@ class Paradox_IP150:
         if "top.location.href='login_page.html';" in default_page.text:
             raise Paradox_IP150_Error('Could not login, wrong credentials provided.')
 
+        # Temporary one-shot firmware probe: list only local navigation paths
+        # from the authenticated landing page. This helps locate Event Log
+        # without guessing firmware-specific endpoint names.
+        parsed_default = BeautifulSoup(default_page.text, 'html.parser')
+        nav_paths = []
+        for tag in parsed_default.find_all('a', href=True):
+            href = tag.get('href', '').strip()
+            if not href or href.lower().startswith(('javascript:', '#')):
+                continue
+            href = href.split('?', 1)[0].split('#', 1)[0]
+            if href not in nav_paths:
+                nav_paths.append(href)
+        form_paths = []
+        for form in parsed_default.find_all('form'):
+            action = (form.get('action') or '').strip()
+            action = action.split('?', 1)[0].split('#', 1)[0]
+            if action and action not in form_paths:
+                form_paths.append(action)
+        logging.warning(
+            'IP150 WEB NAV: links=%s forms=%s',
+            json.dumps(nav_paths, ensure_ascii=True),
+            json.dumps(form_paths, ensure_ascii=True))
+
         time.sleep(3)
         self.logged_in = True
         if keep_alive_interval:
@@ -296,29 +319,6 @@ class Paradox_IP150:
         else:
             result['troubles'] = None
 
-        # Temporary safe diagnostics for firmware variants that do not expose
-        # tbl_troubles. Log only JavaScript variable/array names and compact
-        # values; never dump the full page, credentials or HTML.
-        diagnostic_arrays = {}
-        for match in re.finditer(
-                r'\\b([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*new\\s+Array\\((.*?)\\)\\s*;',
-                script, re.DOTALL):
-            name = match.group(1)
-            if name in ('tbl_statuszone', 'tbl_useraccess'):
-                continue
-            raw_value = ' '.join(match.group(2).split())
-            diagnostic_arrays[name] = raw_value[:300]
-        # Emit this temporary probe only once per process. Repeating it
-        # every poll adds no information and obscures real IP150 warnings.
-        if not getattr(self, '_statuslive_arrays_logged', False):
-            if diagnostic_arrays:
-                logging.warning(
-                    'IP150 STATUSLIVE ARRAYS: %s',
-                    json.dumps(diagnostic_arrays, ensure_ascii=True, sort_keys=True))
-            else:
-                logging.warning(
-                    'IP150 STATUSLIVE ARRAYS: none found besides known status arrays.')
-            self._statuslive_arrays_logged = True
 
         return result
 
