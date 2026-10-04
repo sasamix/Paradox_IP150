@@ -296,6 +296,25 @@ class Paradox_IP150:
         else:
             result['troubles'] = None
 
+        # Temporary safe diagnostics for firmware variants that do not expose
+        # tbl_troubles. Log only JavaScript variable/array names and compact
+        # values; never dump the full page, credentials or HTML.
+        diagnostic_arrays = {}
+        for match in re.finditer(
+                r'\\b([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*new\\s+Array\\((.*?)\\)\\s*;',
+                script, re.DOTALL):
+            name = match.group(1)
+            if name in ('tbl_statuszone', 'tbl_useraccess'):
+                continue
+            raw_value = ' '.join(match.group(2).split())
+            diagnostic_arrays[name] = raw_value[:300]
+        if diagnostic_arrays:
+            logging.warning(
+                'IP150 STATUSLIVE ARRAYS: %s',
+                json.dumps(diagnostic_arrays, ensure_ascii=True, sort_keys=True))
+        else:
+            logging.warning('IP150 STATUSLIVE ARRAYS: none found besides known status arrays.')
+
         return result
 
     def _get_updates(self, on_update, on_error, on_success, userdata, interval):
