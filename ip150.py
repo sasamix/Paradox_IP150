@@ -280,6 +280,22 @@ class Paradox_IP150:
                     state = 'Unknown_{}'.format(value)
                 mapped.append((index, state))
             result[table] = mapped
+        # IP150 firmware also exposes panel troubles through tbl_troubles.
+        # It is optional because some firmware revisions omit the array.
+        trouble_match = re.search(
+            r'\\btbl_troubles\\s*=\\s*new\\s+Array\\((.*?)\\)\\s*;',
+            script, re.DOTALL)
+        if trouble_match:
+            raw = trouble_match.group(1).strip()
+            try:
+                result['troubles'] = json.loads('[' + raw + ']') if raw else []
+            except json.JSONDecodeError:
+                logging.warning(
+                    'Could not parse IP150 tbl_troubles payload: %r', raw[:200])
+                result['troubles'] = []
+        else:
+            result['troubles'] = None
+
         return result
 
     def _get_updates(self, on_update, on_error, on_success, userdata, interval):
