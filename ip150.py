@@ -195,37 +195,53 @@ class Paradox_IP150:
             raise Paradox_IP150_Error('Could not login, wrong credentials provided.')
 
 
-        # The authenticated System Status page exposes zone metadata as
-        # tbl_zone = [area, label, area, label, ...]. Area 0 denotes an
-        # unused slot. Use this instead of blindly discovering all 32 slots.
-        scripts = [str(tag.string) for tag in BeautifulSoup(
-            default_page.text, 'html.parser').find_all('script') if tag.string]
-        default_script = '\n'.join(scripts)
-        try:
-            zone_meta = self._js2array('tbl_zone', default_script)
-            parsed_meta = {}
-            for offset in range(0, len(zone_meta) - 1, 2):
-                area = zone_meta[offset]
-                label = str(zone_meta[offset + 1]).strip()
-                number = (offset // 2) + 1
-                try:
-                    area_number = int(area)
-                except (TypeError, ValueError):
-                    area_number = 0
-                if area_number > 0 and label:
-                    parsed_meta[number] = {
-                        'area': area_number,
-                        'name': label
-                    }
-            self.zone_metadata = parsed_meta
-            logging.info(
-                'IP150 discovered %s configured zones from tbl_zone.',
-                len(self.zone_metadata))
-        except Paradox_IP150_Error:
-            self.zone_metadata = {}
+        # Zone names are exposed by index.html as
+        # tbl_zone = [enabled, label, enabled, label, ...].
+        # Only entries with enabled == 1 are configured panel zones.
+        self.zone_metadata = {}
+        last_zone_meta_error = None
+        for attempt in range(1, 6):
+            try:
+                index_page = self._retry_get(
+                    self.ip150url + '/index.html',
+                    verify=False,
+                    timeout=(3.0, 8.0))
+                if self._looks_like_login_page(index_page.text):
+                    raise Paradox_IP150_Error(
+                        'IP150 index page redirected to login page.')
+                scripts = [
+                    str(tag.string)
+                    for tag in BeautifulSoup(
+                        index_page.text, 'html.parser').find_all('script')
+                    if tag.string
+                ]
+                index_script = '\n'.join(scripts)
+                zone_meta = self._js2array('tbl_zone', index_script)
+                parsed_meta = {}
+                for offset in range(0, len(zone_meta) - 1, 2):
+                    enabled = zone_meta[offset]
+                    label = str(zone_meta[offset + 1]).strip()
+                    number = (offset // 2) + 1
+                    try:
+                        enabled_value = int(enabled)
+                    except (TypeError, ValueError):
+                        enabled_value = 0
+                    if enabled_value == 1 and label:
+                        parsed_meta[number] = {'name': label}
+                self.zone_metadata = parsed_meta
+                logging.info(
+                    'IP150 discovered %s configured zones from tbl_zone.',
+                    len(self.zone_metadata))
+                break
+            except (Paradox_IP150_Error, requests.RequestException) as error:
+                last_zone_meta_error = error
+                if attempt < 5:
+                    time.sleep(1)
+        else:
             logging.warning(
-                'IP150 zone metadata tbl_zone was not found; '
-                'automatic zone discovery will be skipped.')
+                'IP150 zone metadata tbl_zone could not be read; '
+                'automatic zone discovery will be skipped: %s',
+                last_zone_meta_error)
 
         time.sleep(3)
         self.logged_in = True
@@ -311,7 +327,7 @@ class Paradox_IP150:
         script = '\n'.join(scripts)
         result = {
             'zones_meta': [
-                (number, meta['area'], meta['name'])
+                (number, meta['name'])
                 for number, meta in sorted(self.zone_metadata.items())
             ]
         }
