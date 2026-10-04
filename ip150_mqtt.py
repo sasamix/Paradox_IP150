@@ -240,7 +240,7 @@ class IP150_MQTT:
             '', 1, True)
         self._discovery_published = True
 
-    def _publish_zone_discovery(self, client, number, name, area):
+    def _publish_zone_discovery(self, client, number, name):
         if number in self._discovered_zones:
             return
         payload = {
@@ -258,16 +258,11 @@ class IP150_MQTT:
                 'name': 'Paradox IP150',
                 'manufacturer': 'Paradox',
                 'model': 'IP150 MQTT Adapter'
-            },
-            'json_attributes_topic': self._diag_prefix + '/zone_{}/meta'.format(number)
+            }
         }
         client.publish(
             'homeassistant/binary_sensor/paradox_ip150/zone_{}/config'.format(number),
             json.dumps(payload), 1, True)
-        client.publish(
-            self._diag_prefix + '/zone_{}/meta'.format(number),
-            json.dumps({'area': area, 'zone': number}, ensure_ascii=True),
-            1, True)
         self._discovered_zones.add(number)
 
 
@@ -275,9 +270,9 @@ class IP150_MQTT:
         zone_meta = state.get('zones_meta')
         configured_zones = set()
         if zone_meta is not None:
-            for number, area, name in zone_meta:
+            for number, name in zone_meta:
                 configured_zones.add(number)
-                self._publish_zone_discovery(client, number, name, area)
+                self._publish_zone_discovery(client, number, name)
 
         troubles = state.get('troubles')
         if troubles is not None:
