@@ -220,6 +220,15 @@ class IP150_MQTT:
                 'homeassistant/alarm_control_panel/paradox_ip150/area_{}/config'.format(area),
                 json.dumps(payload), 1, True)
 
+        # Clear retained generic zone discovery from older 1.5.8 test
+        # builds. Configured zones are republished below from tbl_zone metadata.
+        for zone_number in range(1, 33):
+            client.publish(
+                'homeassistant/binary_sensor/paradox_ip150/zone_{}/config'.format(
+                    zone_number),
+                '', 1, True)
+        self._discovered_zones.clear()
+
         # Remove obsolete Last seen diagnostic entity and retained state.
         client.publish(
             'homeassistant/sensor/paradox_ip150/last_seen/config',
@@ -231,11 +240,11 @@ class IP150_MQTT:
             '', 1, True)
         self._discovery_published = True
 
-    def _publish_zone_discovery(self, client, number):
+    def _publish_zone_discovery(self, client, number, name, area):
         if number in self._discovered_zones:
             return
         payload = {
-            'name': 'Zone {}'.format(number),
+            'name': name,
             'unique_id': 'paradox_zone_{}'.format(number),
             'state_topic': self._cfg['ZONE_PUBLISH_TOPIC'] + '/' + str(number),
             'payload_on': 'on',
@@ -249,14 +258,27 @@ class IP150_MQTT:
                 'name': 'Paradox IP150',
                 'manufacturer': 'Paradox',
                 'model': 'IP150 MQTT Adapter'
-            }
+            },
+            'json_attributes_topic': self._diag_prefix + '/zone_{}/meta'.format(number)
         }
         client.publish(
             'homeassistant/binary_sensor/paradox_ip150/zone_{}/config'.format(number),
             json.dumps(payload), 1, True)
+        client.publish(
+            self._diag_prefix + '/zone_{}/meta'.format(number),
+            json.dumps({'area': area, 'zone': number}, ensure_ascii=True),
+            1, True)
         self._discovered_zones.add(number)
 
+
     def on_paradox_new_state(self, state, client):
+        zone_meta = state.get('zones_meta')
+        configured_zones = set()
+        if zone_meta is not None:
+            for number, area, name in zone_meta:
+                configured_zones.add(number)
+                self._publish_zone_discovery(client, number, name, area)
+
         troubles = state.get('troubles')
         if troubles is not None:
             labels = []
@@ -288,8 +310,8 @@ class IP150_MQTT:
             if not mapping:
                 continue
             for number, state_name in values:
-                if group == 'zones_status':
-                    self._publish_zone_discovery(client, number)
+                if group == 'zones_status' and configured_zones and number not in configured_zones:
+                    continue
                 value = mapping['map'].get(state_name)
                 if value:
                     client.publish(self._cfg[mapping['topic']] + '/' + str(number), value, 1, True)
