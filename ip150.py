@@ -332,11 +332,21 @@ class Paradox_IP150:
                         if group not in previous:
                             updated[group] = values
                             continue
-                        for cur, prev in zip(values, previous[group]):
+
+                        previous_values = previous[group]
+                        # Optional scalar/None diagnostics (for example
+                        # firmware-specific trouble data) are not indexed
+                        # status tables. Compare them atomically.
+                        if values is None or previous_values is None:
+                            if values != previous_values:
+                                updated[group] = values
+                            continue
+
+                        for cur, prev in zip(values, previous_values):
                             if cur != prev:
                                 updated.setdefault(group, []).append(cur)
-                        if len(values) > len(previous[group]):
-                            updated.setdefault(group, []).extend(values[len(previous[group]):])
+                        if len(values) > len(previous_values):
+                            updated.setdefault(group, []).extend(values[len(previous_values):])
                     if updated:
                         on_update(updated, userdata)
                     previous = current
