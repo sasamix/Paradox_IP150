@@ -16,6 +16,54 @@ class IP150_MQTT_Error(Exception):
 
 
 class IP150_MQTT:
+    # Names used by the classic IP150 web interface (tbl_troublename).
+    # tbl_troubles contains indexes into this table on supported firmware.
+    _trouble_names = [
+        'Clean smoke detector / fire zone / zone communication failure',
+        'Fire loop trouble',
+        'Module missing or failed to communicate',
+        'Module AC power failure',
+        'Module reporting via phone line failed',
+        'Module auxiliary power interrupted',
+        'Module battery low or disconnected',
+        'Module enclosure tampered',
+        'Module ROM memory corrupted',
+        'Printer module does not detect a printer',
+        'Telephone line monitoring trouble',
+        'System communication with modules failed',
+        'System AC power failure',
+        'System reporting via phone failed',
+        'System auxiliary power interrupted',
+        'System battery low or disconnected',
+        'System bell/siren disconnected',
+        'System bell/siren power interrupted',
+        'System ROM memory corrupted',
+        'Loss of time and date',
+        'Too many modules connected',
+        'Wireless zone low battery',
+        'Wireless zone supervision loss',
+        'Zone tampered',
+        'System RF interference',
+        'System reporting with receiver failed',
+        'Module missing / wireless module supervision loss',
+        'Zone antimask transparency trouble',
+        'Zone antimask proximity trouble',
+        'Zone antimask dirty lens trouble',
+        'Module direct light trouble',
+        'Module low bus voltage',
+        'Module self-test failed',
+        'IP150 lost communication with panel',
+        'IP150 receiver supervision',
+        'IP150 receiver unregistered',
+        'IP150 receiver registration failed',
+        'PCS module missing',
+        'PCS module tamper',
+        'PCS GPRS no service',
+        'PCS receiver supervision',
+        'PCS receiver unregistered',
+        'PCS receiver registration failed',
+        'System enclosure tampered'
+    ]
     _status_map = {
         'areas_status': {
             'topic': 'ALARM_PUBLISH_TOPIC',
@@ -101,6 +149,12 @@ class IP150_MQTT:
                 'entity_category': 'diagnostic',
                 'icon': 'mdi:connection'
             },
+            'panel_troubles': {
+                'name': 'Panel troubles',
+                'state_topic': root + '/panel_troubles',
+                'entity_category': 'diagnostic',
+                'icon': 'mdi:shield-alert-outline'
+            },
             'last_outage_seconds': {
                 'name': 'Last outage',
                 'state_topic': root + '/last_outage_seconds',
@@ -111,6 +165,14 @@ class IP150_MQTT:
             }
         }
         binary_entities = {
+            'panel_trouble': {
+                'name': 'Panel trouble',
+                'state_topic': root + '/panel_trouble',
+                'payload_on': 'ON',
+                'payload_off': 'OFF',
+                'device_class': 'problem',
+                'entity_category': 'diagnostic'
+            },
             'connection': {
                 'state_topic': root + '/state',
                 'payload_on': 'connected',
@@ -145,6 +207,32 @@ class IP150_MQTT:
         self._discovery_published = True
 
     def on_paradox_new_state(self, state, client):
+        troubles = state.get('troubles')
+        if troubles is not None:
+            labels = []
+            for code in troubles:
+                try:
+                    index = int(code)
+                except (TypeError, ValueError):
+                    labels.append(str(code))
+                    continue
+                # Known IP150 pages use zero-based indexes into
+                # tbl_troublename. Preserve unknown codes instead of hiding.
+                if 0 <= index < len(self._trouble_names):
+                    labels.append(self._trouble_names[index])
+                else:
+                    labels.append('Unknown trouble {}'.format(index))
+            self._diag_publish(client, 'panel_trouble', 'ON' if labels else 'OFF')
+            self._diag_publish(
+                client, 'panel_troubles',
+                '; '.join(labels) if labels else 'None')
+            if labels:
+                logging.warning(
+                    'IP150 active panel troubles: codes=%r; %s',
+                    troubles, '; '.join(labels))
+            else:
+                logging.debug('IP150 reports no active panel troubles.')
+
         for group, values in state.items():
             mapping = self._status_map.get(group)
             if not mapping:
