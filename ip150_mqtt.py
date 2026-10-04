@@ -214,6 +214,8 @@ class IP150_MQTT:
                 'payload_arm_home': 'ARM_HOME',
                 'payload_arm_away': 'ARM_AWAY',
                 'payload_arm_night': 'ARM_NIGHT',
+                'code_arm_required': False,
+                'code_disarm_required': False,
                 'supported_features': ['arm_home', 'arm_away', 'arm_night'],
                 'device': device
             }
