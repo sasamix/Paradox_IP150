@@ -79,6 +79,7 @@ class Paradox_IP150:
         self._keepalive = None
         self._updates = None
         self._stop_updates = threading.Event()
+        self.zone_metadata = {}
 
     @staticmethod
     def _logged_only(func):
@@ -194,6 +195,38 @@ class Paradox_IP150:
             raise Paradox_IP150_Error('Could not login, wrong credentials provided.')
 
 
+        # The authenticated System Status page exposes zone metadata as
+        # tbl_zone = [area, label, area, label, ...]. Area 0 denotes an
+        # unused slot. Use this instead of blindly discovering all 32 slots.
+        scripts = [str(tag.string) for tag in BeautifulSoup(
+            default_page.text, 'html.parser').find_all('script') if tag.string]
+        default_script = '\n'.join(scripts)
+        try:
+            zone_meta = self._js2array('tbl_zone', default_script)
+            parsed_meta = {}
+            for offset in range(0, len(zone_meta) - 1, 2):
+                area = zone_meta[offset]
+                label = str(zone_meta[offset + 1]).strip()
+                number = (offset // 2) + 1
+                try:
+                    area_number = int(area)
+                except (TypeError, ValueError):
+                    area_number = 0
+                if area_number > 0 and label:
+                    parsed_meta[number] = {
+                        'area': area_number,
+                        'name': label
+                    }
+            self.zone_metadata = parsed_meta
+            logging.info(
+                'IP150 discovered %s configured zones from tbl_zone.',
+                len(self.zone_metadata))
+        except Paradox_IP150_Error:
+            self.zone_metadata = {}
+            logging.warning(
+                'IP150 zone metadata tbl_zone was not found; '
+                'automatic zone discovery will be skipped.')
+
         time.sleep(3)
         self.logged_in = True
         if keep_alive_interval:
@@ -276,7 +309,12 @@ class Paradox_IP150:
 
         scripts = [str(tag.string) for tag in parsed.find_all('script') if tag.string]
         script = '\n'.join(scripts)
-        result = {}
+        result = {
+            'zones_meta': [
+                (number, meta['area'], meta['name'])
+                for number, meta in sorted(self.zone_metadata.items())
+            ]
+        }
         for table, definition in self._tables_map.items():
             values = self._js2array(definition['name'], script)
             mapped = []
@@ -325,7 +363,7 @@ class Paradox_IP150:
                             continue
 
                         previous_values = previous[group]
-                        if group == 'troubles':
+                        if group in ('troubles', 'zones_meta'):
                             if values != previous_values:
                                 updated[group] = values
                             continue
