@@ -195,6 +195,29 @@ class IP150_MQTT:
             client.publish(
                 'homeassistant/binary_sensor/paradox_ip150/' + object_id + '/config',
                 json.dumps(payload), 1, True)
+        # Discover alarm areas so they no longer need manual YAML.
+        # Areas 1 and 2 are currently used by this installation; publishing
+        # discovery for both is harmless when an area is unused.
+        for area in (1, 2):
+            payload = {
+                'name': 'Paradox {}'.format(area),
+                'unique_id': 'paradox_alarm_area_{}'.format(area),
+                'state_topic': self._cfg['ALARM_PUBLISH_TOPIC'] + '/' + str(area),
+                'command_topic': self._cfg['ALARM_SUBSCRIBE_TOPIC'] + '/' + str(area),
+                'qos': 1,
+                'availability_topic': self._cfg['CTRL_PUBLISH_TOPIC'],
+                'payload_available': 'Connected',
+                'payload_not_available': 'Disconnected',
+                'payload_disarm': 'DISARM',
+                'payload_arm_home': 'ARM_HOME',
+                'payload_arm_away': 'ARM_AWAY',
+                'payload_arm_night': 'ARM_NIGHT',
+                'device': device
+            }
+            client.publish(
+                'homeassistant/alarm_control_panel/paradox_ip150/area_{}/config'.format(area),
+                json.dumps(payload), 1, True)
+
         # Remove obsolete Last seen diagnostic entity and retained state.
         client.publish(
             'homeassistant/sensor/paradox_ip150/last_seen/config',
